@@ -1,0 +1,17 @@
+# Firebase
+.firebase/
+*.firebase/
+
+# Firebase Admin SDK credentials
+*firebase-adminsdk*.json
+
+# Environment files
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# Operating system files
+.DS_Store
+Thumbs.db
