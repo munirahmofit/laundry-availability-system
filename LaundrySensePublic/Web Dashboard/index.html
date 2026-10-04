@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaundrySense</title>
+
+<!-- Firebase FIRST — exactly as working old code -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+<!-- Leaflet AFTER Firebase -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#eef1f4;overflow:hidden}
+
+
+header{background:#0f2a45;color:white;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+header .brand{display:flex;align-items:center;gap:10px}
+header .brand .logo{width:34px;height:34px;border-radius:9px;background:#2d6a4f;display:flex;align-items:center;justify-content:center;font-size:18px}
+header h1{font-size:17px;font-weight:700}
+header p{font-size:11px;opacity:0.6;margin-top:1px}
+.live-dot{display:flex;align-items:center;gap:6px;font-size:11px;opacity:0.85;background:rgba(255,255,255,0.08);padding:6px 12px;border-radius:20px}
+.dot{width:7px;height:7px;border-radius:50%;background:#4caf50;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
+
+
+.stat-strip{display:flex;background:white;border-bottom:1px solid #e2e6ea;position:relative;z-index:900}
+.stat-item{flex:1;text-align:center;padding:10px 6px;border-right:1px solid #eef0f2}
+.stat-item:last-child{border-right:none}
+.stat-item .num{font-size:19px;font-weight:700;color:#0f2a45}
+.stat-item .lbl{font-size:10px;color:#95a0aa;text-transform:uppercase;letter-spacing:0.4px;margin-top:1px}
+.stat-item.avail .num{color:#2e7d32}
+.stat-item.inuse .num{color:#c62828}
+
+/* MAP */
+#map-wrap{position:relative;height:calc(100vh - 108px)}
+#map{height:100%;width:100%}
+
+/* PIN */
+.pin{position:relative;width:40px;height:40px}
+.pin-circle{width:38px;height:38px;border-radius:50% 50% 50% 0;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;border:3px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.35)}
+.pin-circle span{transform:rotate(-45deg);font-size:16px}
+.pin-green .pin-circle{background:#2e7d32}
+.pin-yellow .pin-circle{background:#f57f17}
+.pin-red .pin-circle{background:#c62828}
+.pin-pulse{position:absolute;top:2px;left:2px;width:34px;height:34px;border-radius:50%;animation:pulse 2.2s infinite;z-index:-1}
+.pin-green .pin-pulse{background:rgba(46,125,50,0.35)}
+.pin-yellow .pin-pulse{background:rgba(245,127,23,0.35)}
+.pin-red .pin-pulse{background:rgba(198,40,40,0.35)}
+@keyframes pulse{0%{transform:scale(0.6);opacity:0.8}100%{transform:scale(1.9);opacity:0}}
+
+
+.map-legend{position:absolute;top:14px;left:14px;background:white;border-radius:10px;padding:10px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.15);font-size:11px;z-index:800;display:flex;flex-direction:column;gap:6px}
+.map-legend .row{display:flex;align-items:center;gap:7px;color:#556}
+.map-legend .sw{width:10px;height:10px;border-radius:50%}
+
+
+.map-updated{position:absolute;bottom:14px;left:14px;background:white;border-radius:8px;padding:6px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);font-size:10px;color:#95a0aa;z-index:800}
+
+/* BOTTOM SHEET */
+.sheet{position:fixed;left:0;right:0;bottom:0;background:white;border-radius:18px 18px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,0.2);transform:translateY(100%);transition:transform 0.28s ease;z-index:1100;max-height:72vh;overflow-y:auto}
+.sheet.open{transform:translateY(0)}
+.sheet-handle{width:40px;height:4px;background:#dfe3e7;border-radius:3px;margin:10px auto}
+.sheet-inner{padding:4px 20px 24px}
+.sheet-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.sheet-top h2{font-size:18px;color:#0f2a45;font-weight:700}
+.sheet-top p{font-size:12px;color:#95a0aa;margin-top:2px}
+.sheet-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.pill-green{background:#e8f5e9;color:#2e7d32}
+.pill-yellow{background:#fff8e1;color:#f57f17}
+.pill-red{background:#fce4ec;color:#c62828}
+.m-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #f1f3f5}
+.m-row:first-of-type{border-top:none}
+.m-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.m-dot.g{background:#2e7d32}.m-dot.r{background:#c62828}
+.m-info{flex:1}
+.m-info .name{font-size:13.5px;font-weight:600;color:#243}
+.m-info .tag{font-size:10.5px;color:#a3aeb8}
+.notify-btn{background:#0f2a45;color:white;border:none;padding:8px 14px;border-radius:8px;font-size:11.5px;font-weight:600;text-decoration:none;white-space:nowrap;cursor:pointer}
+.notify-btn:hover{background:#1a4570}
+.full-btn{display:block;width:100%;text-align:center;background:#2d6a4f;color:white;border:none;padding:13px;border-radius:10px;font-size:14px;font-weight:700;margin-top:16px;cursor:pointer}
+.full-btn:hover{background:#245a41}
+.sheet-close{position:absolute;top:14px;right:16px;background:#f1f3f5;border:none;width:28px;height:28px;border-radius:50%;font-size:14px;color:#889;cursor:pointer}
+
+/* DETAIL PAGE */
+#page-detail{position:fixed;inset:0;background:#eef1f4;z-index:1300;overflow-y:auto;display:none}
+.detail-container{max-width:800px;margin:0 auto;padding:20px}
+.back-btn{display:inline-flex;align-items:center;gap:6px;background:white;border:1px solid #dde2e6;color:#0f2a45;padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;margin-bottom:16px;font-weight:600}
+.back-btn:hover{background:#f6f8fa}
+.detail-header{background:white;border-radius:12px;padding:18px 22px;border:1px solid #e2e6ea;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.detail-header h2{font-size:18px;font-weight:700;color:#0f2a45}
+.detail-header p{font-size:12px;color:#95a0aa;margin-top:3px}
+.detail-stats{display:flex;gap:14px}
+.ds{text-align:center;padding:8px 16px;border-radius:8px}
+.ds-avail{background:#e8f5e9}.ds-inuse{background:#fce4ec}
+.ds .n{font-size:19px;font-weight:700}.ds-avail .n{color:#2e7d32}.ds-inuse .n{color:#c62828}
+.ds .l{font-size:10.5px;color:#95a0aa}
+.machines-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.machine-card{background:white;border-radius:12px;border:1px solid #e2e6ea;padding:20px;text-align:center}
+.machine-card.card-available{border-top:3px solid #4caf50}
+.machine-card.card-inuse{border-top:3px solid #f44336}
+.m-icon{font-size:34px;margin-bottom:8px}
+.m-name{font-size:12.5px;color:#95a0aa;margin-bottom:6px}
+.m-badge{display:inline-block;padding:5px 16px;border-radius:20px;font-size:12px;font-weight:700;margin-bottom:8px}
+.b-avail{background:#e8f5e9;color:#2e7d32}
+.b-inuse{background:#fce4ec;color:#c62828}
+.m-src{font-size:10px;color:#c2cad2;margin-top:2px}
+.detail-notify{margin-top:10px;display:inline-block;background:#0f2a45;color:white;border:none;padding:7px 14px;border-radius:7px;font-size:11.5px;font-weight:600;text-decoration:none}
+@media(max-width:640px){.machines-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">🧺</div>
+    <div>
+      <h1>LaundrySense</h1>
+      <p>Bandar Seri Putra · live machine map</p>
+    </div>
+  </div>
+  <div class="live-dot"><span class="dot"></span> Live</div>
+</header>
+
+<div class="stat-strip">
+  <div class="stat-item"><div class="num">3</div><div class="lbl">Shops</div></div>
+  <div class="stat-item"><div class="num">9</div><div class="lbl">Machines</div></div>
+  <div class="stat-item avail"><div class="num" id="s-avail">—</div><div class="lbl">Available</div></div>
+  <div class="stat-item inuse"><div class="num" id="s-inuse">—</div><div class="lbl">In use</div></div>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+  <div class="map-legend">
+    <div class="row"><span class="sw" style="background:#2e7d32"></span> 2+ free</div>
+    <div class="row"><span class="sw" style="background:#f57f17"></span> 1 free</div>
+    <div class="row"><span class="sw" style="background:#c62828"></span> Full</div>
+  </div>
+  <div class="map-updated">Updated: <span id="main-time">—</span></div>
+</div>
+
+<!-- BOTTOM SHEET -->
+<div class="sheet" id="sheet">
+  <button class="sheet-close" onclick="closeSheet()">✕</button>
+  <div class="sheet-handle"></div>
+  <div class="sheet-inner">
+    <div class="sheet-top">
+      <div>
+        <h2 id="sh-name"></h2>
+        <p id="sh-loc"></p>
+      </div>
+      <span class="sheet-pill" id="sh-pill"></span>
+    </div>
+    <div id="sh-machines"></div>
+    <button class="full-btn" id="sh-full-btn">View full machine details →</button>
+  </div>
+</div>
+
+<!-- DETAIL PAGE -->
+<div id="page-detail">
+  <div class="detail-container">
+    <button class="back-btn" onclick="showMap()">← Back to map</button>
+    <div class="detail-header">
+      <div>
+        <h2 id="detail-name"></h2>
+        <p id="detail-loc"></p>
+      </div>
+      <div class="detail-stats">
+        <div class="ds ds-avail"><div class="n" id="d-avail">—</div><div class="l">Available</div></div>
+        <div class="ds ds-inuse"><div class="n" id="d-inuse">—</div><div class="l">In Use</div></div>
+      </div>
+    </div>
+    <div class="machines-grid" id="detail-machines"></div>
+    <p style="text-align:center;font-size:11px;color:#c2cad2;margin-top:16px;padding-bottom:24px">
+      Machine 1 — 📡 real IoT sensor (SW-420 + ESP32) · Machine 2 & 3 — 🔄 simulated
+    </p>
+  </div>
+</div>
+
+<script>
+
+const firebaseConfig = {
+  apiKey: "*********************",
+  authDomain: "laundrysense-52659.firebaseapp.com",
+  databaseURL: "https://laundrysense-52659-default-rtdb.firebaseio.com",
+  projectId: "laundrysense-52659",
+  storageBucket: "laundrysense-52659.firebasestorage.app",
+  messagingSenderId: "1031211637100",
+  appId: "1:1031211637100:web:f5d5fb6ffb410bd85fbb49"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// =============================================
+// DATA
+// =============================================
+const LAUNDRIES = [
+  {id:"LaundryA", name:"LaundryLab", location:"Jalan Seri Putra 1, Bandar Seri Putra", lat:2.8875, lng:101.7788},
+  {id:"LaundryB", name:"BubbleLab", location:"Jalan Mahkota, Bandar Seri Putra",      lat:2.8859, lng:101.7799},
+  {id:"LaundryC", name:"LaundryBar", location:"Jalan Puteri Bangi, Bandar Seri Putra", lat:2.8845, lng:101.7812}
+];
+const MACHINES = ["Machine1","Machine2","Machine3"];
+const BOT_USERNAME = "LaundrySenseAlert_bot";
+
+// Simulated for Machine2 & Machine3
+const simulated = {};
+LAUNDRIES.forEach(l => {
+  simulated[l.id] = {
+    Machine2: Math.random() > 0.5 ? "In Use" : "Available",
+    Machine3: Math.random() > 0.5 ? "In Use" : "Available"
+  };
+});
+setInterval(() => {
+  LAUNDRIES.forEach(l => {
+    if (Math.random() > 0.7) simulated[l.id].Machine2 = simulated[l.id].Machine2 === "In Use" ? "Available" : "In Use";
+    if (Math.random() > 0.7) simulated[l.id].Machine3 = simulated[l.id].Machine3 === "In Use" ? "Available" : "In Use";
+  });
+  renderAll();
+}, 30000);
+
+// Live Firebase data — same pattern as OLD working code
+const liveData = {};
+LAUNDRIES.forEach(l => { liveData[l.id] = { Machine1: null }; });
+
+// Firebase listener — EXACT same as old working code
+LAUNDRIES.forEach(l => {
+  db.ref(`/${l.id}/Machine1/status`).on("value", snap => {
+    liveData[l.id].Machine1 = snap.val() || "Available";
+    renderAll();
+    document.getElementById("main-time").textContent = new Date().toLocaleTimeString();
+  });
+});
+
+function getStatus(lid, mid) {
+  if (mid === "Machine1") return liveData[lid].Machine1 || "Available";
+  return simulated[lid][mid];
+}
+function getAvailCount(lid) { return MACHINES.filter(m => getStatus(lid, m) === "Available").length; }
+function getInUseCount(lid) { return MACHINES.filter(m => getStatus(lid, m) === "In Use").length; }
+function statusTier(lid) {
+  const a = getAvailCount(lid);
+  return a === 0 ? "red" : a >= 2 ? "green" : "yellow";
+}
+
+// 
+// MAP
+// 
+const map = L.map('map', { zoomControl: false }).setView([2.8859, 101.7799], 16);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_****************************', {
+  attribution: '© OpenStreetMap, © CARTO',
+  maxZoom: 19
+}).addTo(map);
+const markers = {};
+function makeIcon(tier, laundryName, availCount, totalCount) {
+  const bg = tier==='green'?'#2e7d32':tier==='yellow'?'#f57f17':'#c62828';
+  const shortName = laundryName.replace('Laundry Shop ','Shop ');
+  return L.divIcon({
+    className: '',
+    html: `
+      <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
+        <!-- Info bubble above pin -->
+        <div style="background:white;border-radius:10px;padding:5px 10px;box-shadow:0 2px 8px rgba(0,0,0,0.2);border:2px solid ${bg};min-width:100px;text-align:center;margin-bottom:4px;">
+          <div style="font-size:10px;font-weight:700;color:#1a3a5c;">${shortName}</div>
+          <div style="font-size:12px;font-weight:800;color:${bg};">${availCount}/${totalCount} Available</div>
+        </div>
+        <!-- Triangle pointer -->
+        <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid white;margin-top:-2px;filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));"></div>
+        <!-- Pin -->
+        <div class="pin pin-${tier}" style="margin-top:-2px;">
+          <div class="pin-pulse"></div>
+          <div class="pin-circle"><span>🧺</span></div>
+        </div>
+      </div>`,
+    iconSize: [110, 90],
+    iconAnchor: [55, 90]
+  });
+}
+LAUNDRIES.forEach(l => {
+  const m = L.marker([l.lat, l.lng], { icon: makeIcon('green',  l.name, 0, 3) }).addTo(map);
+  m.on('click', () => openSheet(l.id));
+  markers[l.id] = m;
+});
+
+// =============================================
+// BOTTOM SHEET
+// =============================================
+let currentSheet = null;
+function openSheet(lid) {
+  currentSheet = lid;
+  const l = LAUNDRIES.find(x => x.id === lid);
+  const tier = statusTier(lid);
+  document.getElementById('sh-name').textContent = l.name;
+  document.getElementById('sh-loc').textContent = l.location;
+  const pillEl = document.getElementById('sh-pill');
+  pillEl.className = 'sheet-pill ' + (tier==='red'?'pill-red':tier==='green'?'pill-green':'pill-yellow');
+  pillEl.textContent = tier==='red'?'🔴 Full':tier==='green'?'🟢 Available':'🟡 Limited';
+  document.getElementById('sh-machines').innerHTML = MACHINES.map((m,i) => {
+    const status = getStatus(lid, m);
+    const isAvail = status === "Available";
+    const isReal = m === "Machine1";
+    return `<div class="m-row">
+      <span class="m-dot ${isAvail?'g':'r'}"></span>
+      <div class="m-info">
+        <div class="name">Machine ${i+1} — ${status}</div>
+        <div class="tag">${isReal?'📡 IoT sensor':'🔄 Simulated'}</div>
+      </div>
+      ${!isAvail?`<a class="notify-btn" href="https://t.me/${BOT_USERNAME}?start=${lid}_${m}" target="_blank">🔔 Notify me</a>`:''}
+    </div>`;
+  }).join('');
+  document.getElementById('sh-full-btn').onclick = () => showDetail(lid);
+  document.getElementById('sheet').classList.add('open');
+  map.panTo([l.lat, l.lng]);
+}
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
+  currentSheet = null;
+}
+
+// =============================================
+// DETAIL PAGE — with URL hash (fixes refresh problem)
+// =============================================
+function showDetail(lid) {
+  const l = LAUNDRIES.find(x => x.id === lid);
+  document.getElementById('detail-name').textContent = l.name;
+  document.getElementById('detail-loc').textContent = l.location;
+  document.getElementById('page-detail').dataset.laundry = lid;
+  renderDetail(lid);
+  closeSheet();
+  document.getElementById('page-detail').style.display = 'block';
+  window.location.hash = 'detail-' + lid; // fix refresh problem
+}
+function showMap() {
+  document.getElementById('page-detail').style.display = 'none';
+  document.getElementById('page-detail').dataset.laundry = '';
+  window.location.hash = '';
+}
+function renderDetail(lid) {
+  document.getElementById('d-avail').textContent = getAvailCount(lid);
+  document.getElementById('d-inuse').textContent = getInUseCount(lid);
+  document.getElementById('detail-machines').innerHTML = MACHINES.map((m,i) => {
+    const status = getStatus(lid, m);
+    const isReal = m === "Machine1";
+    const cardClass = status === "In Use" ? "card-inuse" : "card-available";
+    const badgeClass = status === "In Use" ? "b-inuse" : "b-avail";
+    const icon = status === "In Use" ? "⚙️" : "🫧";
+    return `<div class="machine-card ${cardClass}">
+      <div class="m-icon">${icon}</div>
+      <div class="m-name">Machine ${i+1}</div>
+      <div><span class="m-badge ${badgeClass}">${status}</span></div>
+      <div class="m-src">${isReal?"📡 IoT sensor":"🔄 Simulated"}</div><br>
+      ${status==="In Use"?`<a class="detail-notify" href="https://t.me/${BOT_USERNAME}?start=${lid}_${m}" target="_blank">🔔 Notify me</a>`:''}
+    </div>`;
+  }).join('');
+}
+
+// Handle refresh — restore detail page from URL hash
+function handleHash() {
+  const hash = window.location.hash;
+  if (hash.startsWith('#detail-')) {
+    const lid = hash.replace('#detail-', '');
+    const l = LAUNDRIES.find(x => x.id === lid);
+    if (l) {
+      document.getElementById('detail-name').textContent = l.name;
+      document.getElementById('detail-loc').textContent = l.location;
+      document.getElementById('page-detail').dataset.laundry = lid;
+      renderDetail(lid);
+      document.getElementById('page-detail').style.display = 'block';
+    }
+  }
+}
+window.addEventListener('hashchange', handleHash);
+handleHash();
+
+// =============================================
+// MASTER RENDER — updates everything
+// =============================================
+function renderAll() {
+  let ta = 0, ti = 0;
+  LAUNDRIES.forEach(l => {
+    ta += getAvailCount(l.id);
+    ti += getInUseCount(l.id);
+     if (markers[l.id]) markers[l.id].setIcon(makeIcon(statusTier(l.id), l.name, getAvailCount(l.id), MACHINES.length));
+  });
+  document.getElementById('s-avail').textContent = ta;
+  document.getElementById('s-inuse').textContent = ti;
+
+  // Refresh bottom sheet if open
+  if (currentSheet) openSheet(currentSheet);
+
+  // Refresh detail page if open
+  const lid = document.getElementById('page-detail').dataset.laundry;
+  if (lid && document.getElementById('page-detail').style.display === 'block') {
+    renderDetail(lid);
+  }
+}
+renderAll();
+</script>
+</body>
+</html>
